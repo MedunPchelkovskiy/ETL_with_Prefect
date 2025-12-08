@@ -9,7 +9,7 @@ POSTGRES_URI = (f"postgresql://{config("DB_USERNAME")}:{config("DB_PASS")}@local
 engine = create_engine(POSTGRES_URI)
 
 
-def process_month_postgres(df, table_name="green_taxi_trips"):
+def process_month_postgres(df, table_name):
     """
     Process each month's TLC data and insert into PostgreSQL table.
 
@@ -36,4 +36,11 @@ def process_month_postgres(df, table_name="green_taxi_trips"):
     df = df[[col for col in columns_to_keep if col in df.columns]]
 
     # Insert into PostgreSQL (append)
-    df.to_sql(table_name, engine, if_exists="append", index=False)
+    df.to_sql(
+        table_name,
+        engine,
+        if_exists="append",
+        index=False,
+        method="multi",
+        chunksize=10000
+    )
