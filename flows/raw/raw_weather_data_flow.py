@@ -1,12 +1,7 @@
-import json
-
-from decouple import config
 from prefect import flow, task
 
-from extract.extract_from_meteostat_com import extract_meteostat_data
-from extract.extract_from_open_weather import extract_historical_data_for_new_york
-from extract.extract_from_weatherapi_com import extract_historical_data
-from extract.extract_tlc_traffic_data_S3_bucket import download_tlc_trip_data
+from tasks.raw.extract_from_meteostat_com import extract_meteostat_data
+from tasks.raw.extract_tlc_traffic_data import download_tlc_trip_data
 
 
 # @task(name="My Extract Task",
@@ -32,26 +27,28 @@ from extract.extract_tlc_traffic_data_S3_bucket import download_tlc_trip_data
       description="An extract task for the weather flow.",
       task_run_name="meteostat extraction")
 def extract_from_meteostat(api_key, lat, lon, start, end):
-    meteostat_data = extract_meteostat_data(api_key, lat, lon, start, end)
-    return meteostat_data
+    extract_meteostat_data(api_key, lat, lon, start, end)
+    return None
 
 
 
 @task(name="Traffic data from S3",
       task_run_name="S3 traffic extraction"
       )
-def extract_tlc_traffic_data_from_S3(service: str, year: int, month: int, filetype: str):
-    raw_trip_data = download_tlc_trip_data(service, year, month, filetype)
+def extract_tlc_traffic_data_from_s3(services: list, start_year: int, end_year: int, month: int, file_types: list):
+    raw_trip_data = download_tlc_trip_data(services, start_year, end_year, month, file_types)
     return raw_trip_data
 
 
 @flow(flow_run_name="weather_flow_runs")
 def weather_flow(city_name, country_code):
+    services = ["green", "yellow"]
+    file_types = ["parquet", "csv"]
     # open_weather_data = extract_weather_data(city_name, country_code)
     # weather_api_data = extract_from_weatherapi_com(city_name)
     # meteostat_api_data = extract_from_meteostat(api_key=config("METEOSTAT_API_KEY"), lat=40.7127, lon=-74.0059, start="2014-01-01", end="2014-12-31")
     # print(json.dumps(meteostat_api_data, indent=4))
-    tlc_raw_trip_data = extract_tlc_traffic_data_from_S3("green", 2014, 1, "parquet")
+    tlc_raw_trip_data = extract_tlc_traffic_data_from_s3(services, 2014, 2024, 1, file_types)
     # print(tlc_raw_trip_data.head(13))
     # print(tlc_raw_trip_data.columns.tolist())
 
@@ -60,3 +57,58 @@ def weather_flow(city_name, country_code):
 # Example usage
 if __name__ == "__main__":
     weather_flow("New Work", "US")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from prefect import flow
+from tasks_raw import (
+    download_taxi_file,
+    to_json_records,
+    insert_raw_into_postgres,
+    audit_schema
+)
+
+@flow
+def raw_ingestion_flow():
+
+    for taxi_type in ["yellow", "green"]:
+        for year in range(2014, 2025):
+            for month in range(1, 13):
+
+                df = download_taxi_file(taxi_type, year, month)
+                if df is None:
+                    continue
+
+                audit_schema(df, taxi_type, year, month)
+
+                records = to_json_records(df)
+                insert_raw_into_postgres(records, taxi_type, year, month)
+
+
+if name == "main":
+    raw_ingestion_flow()
